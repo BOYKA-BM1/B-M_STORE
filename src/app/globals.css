@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 224 40% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 40% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 40% 10%;
+    --primary: 250 85% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 224 40% 16%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 280 70% 96%;
+    --accent-foreground: 280 60% 30%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 250 85% 55%;
+    --radius: 0.875rem;
+    --hero-from: 250 85% 55%;
+    --hero-to: 280 75% 45%;
+  }
+
+  .dark {
+    --background: 224 30% 7%;
+    --foreground: 210 40% 98%;
+    --card: 224 28% 10%;
+    --card-foreground: 210 40% 98%;
+    --popover: 224 28% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 250 90% 65%;
+    --primary-foreground: 224 40% 8%;
+    --secondary: 224 20% 16%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 224 20% 16%;
+    --muted-foreground: 215 15% 60%;
+    --accent: 280 30% 18%;
+    --accent-foreground: 280 70% 85%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 18% 18%;
+    --input: 224 18% 18%;
+    --ring: 250 90% 65%;
+  }
+
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+[dir="rtl"] {
+  font-family: var(--font-cairo), "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+/* Premium utilities */
+.hero-gradient {
+  background: linear-gradient(135deg, hsl(var(--hero-from)) 0%, hsl(var(--hero-to)) 100%);
+}
+.glass {
+  @apply bg-background/80 backdrop-blur-xl border border-border/60;
+}
+.card-hover {
+  @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-primary/30;
+}
+.search-box {
+  @apply w-full h-12 md:h-14 rounded-2xl border-2 border-border bg-card px-5 text-base shadow-sm
+    focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all;
+}
