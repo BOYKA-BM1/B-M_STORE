@@ -6,6 +6,8 @@ import AdmZip from "adm-zip";
 import { requireAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 const EXT_LANG: Record<string, string> = {
   ".ts": "TypeScript",
@@ -152,10 +154,14 @@ export async function POST(req: Request) {
     }
     for (const l of languages.slice(0, 4)) techs.add(l.language);
 
-    // Extract for live demo
     const pendingId = `pending_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const extracted = await extractZipToDemo(buf, pendingId);
-
+    let extracted = { ok: false, errors: [] as string[], entryFile: null as string | null, fileCount: 0, folderId: pendingId };
+    try {
+      extracted = await extractZipToDemo(buf, pendingId);
+    } catch (e) {
+      console.error("[analyze] extract failed", e);
+      extracted = { ok: false, errors: ["extract failed"], entryFile: null, fileCount: 0, folderId: pendingId };
+    }
     const hasRunnableDemo = !!extracted.entryFile;
     const shortDescription =
       projectDescription ||
@@ -220,6 +226,8 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "فشل تحليل الملف" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "unknown";
+    console.error("[analyze]", e);
+    return NextResponse.json({ error: "فشل تحليل الملف", details: [msg] }, { status: 500 });
   }
 }

@@ -3,7 +3,10 @@ import path from "path";
 import AdmZip from "adm-zip";
 import { validateZipBuffer } from "@/lib/security/zip-validator";
 
-const DEMOS_ROOT = path.join(process.cwd(), "data", "demos");
+const DEMOS_ROOT =
+  process.env.VERCEL || process.env.DATA_DIR === "tmp"
+    ? path.join("/tmp", "bm-store-demos")
+    : path.join(process.cwd(), "data", "demos");
 
 export async function ensureDemosRoot() {
   await fs.mkdir(DEMOS_ROOT, { recursive: true });
