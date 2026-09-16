@@ -1,25 +1,30 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { PROJECTS as SEED, type Project, CATEGORIES } from "./projects";
-import { STORE_SETTINGS } from "@/lib/settings";
+
+const REDIS_KEY = "bm_store_projects";
+
+function hasRedis() {
+  return !!(
+    process.env.UPSTASH_REDIS_REST_URL?.trim() &&
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
+  );
+}
+
+function isServerless() {
+  return !!(process.env.VERCEL || process.env.DATA_DIR === "tmp");
+}
 
 function resolveDataDir() {
-  // على Vercel نظام الملفات للقراءة فقط ما عدا /tmp
-  if (process.env.VERCEL || process.env.DATA_DIR === "tmp") {
-    return path.join("/tmp", "bm-store-data");
-  }
+  if (isServerless()) return path.join("/tmp", "bm-store-data");
   return path.join(process.cwd(), "data");
 }
 
 const DATA_DIR = resolveDataDir();
 const PROJECTS_FILE = path.join(DATA_DIR, "projects.json");
-const UPLOADS_DIR =
-  process.env.VERCEL || process.env.DATA_DIR === "tmp"
-    ? path.join("/tmp", "bm-store-uploads")
-    : path.join(process.cwd(), "public", "uploads");
-
-/** مسار قراءة احتياطي من ملفات المشروع (seed / committed json) */
-const BUNDLED_PROJECTS = path.join(process.cwd(), "data", "projects.json");
+const UPLOADS_DIR = isServerless()
+  ? path.join("/tmp", "bm-store-uploads")
+  : path.join(process.cwd(), "public", "uploads");
 
 async function ensureDataDir() {
   try {
@@ -37,9 +42,48 @@ export async function ensureUploadsDir() {
   }
 }
 
-export async function loadProjects(): Promise<Project[]> {
+async function redisGet(): Promise<Project[] | null> {
+  if (!hasRedis()) return null;
+  const base = process.env.UPSTASH_REDIS_REST_URL!.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN!;
+  try {
+    const res = await fetch(`${base}/get/${REDIS_KEY}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { result?: string | null };
+    if (data.result == null) return null;
+    const parsed = JSON.parse(data.result) as Project[];
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    console.error("[store] redisGet failed", e);
+    return null;
+  }
+}
+
+async function redisSet(projects: Project[]): Promise<void> {
+  if (!hasRedis()) throw new Error("Redis not configured");
+  const base = process.env.UPSTASH_REDIS_REST_URL!.replace(/\/$/, "");
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN!;
+  const payload = JSON.stringify(projects);
+  const res = await fetch(base, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(["SET", REDIS_KEY, payload]),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Redis SET failed: ${res.status} ${text}`);
+  }
+}
+
+async function loadFromFile(): Promise<Project[] | null> {
   await ensureDataDir();
-  // 1) جرب التخزين القابل للكتابة
   try {
     const raw = await fs.readFile(PROJECTS_FILE, "utf-8");
     const parsed = JSON.parse(raw) as Project[];
@@ -47,34 +91,59 @@ export async function loadProjects(): Promise<Project[]> {
   } catch {
     /* missing */
   }
-  // 2) جرب الملف المرفق مع المشروع (مهم على Vercel)
-  try {
-    const raw = await fs.readFile(BUNDLED_PROJECTS, "utf-8");
-    const parsed = JSON.parse(raw) as Project[];
-    if (Array.isArray(parsed)) {
-      // انسخ لـ /tmp لو ممكن عشان التعديلات أثناء التشغيل
-      try {
-        await saveProjects(parsed);
-      } catch {
-        /* read-only */
-      }
-      return parsed;
+  return null;
+}
+
+async function saveToFile(projects: Project[]): Promise<void> {
+  await ensureDataDir();
+  await fs.writeFile(PROJECTS_FILE, JSON.stringify(projects, null, 2), "utf-8");
+}
+
+export async function loadProjects(): Promise<Project[]> {
+  if (hasRedis()) {
+    const fromRedis = await redisGet();
+    if (fromRedis) return fromRedis;
+    const initial: Project[] = [];
+    try {
+      await redisSet(initial);
+    } catch (e) {
+      console.error("[store] redis init failed", e);
     }
-  } catch {
-    /* no bundled */
+    return initial;
   }
-  // 3) أول تشغيل: seed
-  try {
-    await saveProjects(SEED);
-  } catch {
-    /* read-only env */
+
+  const fromFile = await loadFromFile();
+  if (fromFile) return fromFile;
+
+  if (!isServerless()) {
+    try {
+      await saveToFile(SEED.map((p) => ({ ...p })));
+    } catch {
+      /* ignore */
+    }
+    return SEED.map((p) => ({ ...p }));
   }
-  return SEED.map((p) => ({ ...p }));
+
+  return [];
 }
 
 export async function saveProjects(projects: Project[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(PROJECTS_FILE, JSON.stringify(projects, null, 2), "utf-8");
+  if (hasRedis()) {
+    await redisSet(projects);
+    return;
+  }
+  if (isServerless()) {
+    try {
+      await saveToFile(projects);
+    } catch (e) {
+      console.error("[store] serverless file save failed", e);
+      throw new Error(
+        "التخزين غير مفعّل. أضف UPSTASH_REDIS_REST_URL و UPSTASH_REDIS_REST_TOKEN في Vercel."
+      );
+    }
+    return;
+  }
+  await saveToFile(projects);
 }
 
 export async function getAllProjects(): Promise<Project[]> {
@@ -120,22 +189,19 @@ export async function searchProjectsAsync(query: string): Promise<Project[]> {
   );
 }
 
-/** Always attach internal demo URL for published projects */
 export function withDemoUrl(project: Project): Project {
-  // Live runnable demo served from extracted ZIP at /d/{slug}/
+  if (project.demoMode === "DISABLED") return project;
+  if (project.demoUrl && project.demoUrl.startsWith("http")) return project;
   const liveDemo = `/d/${project.slug}/`;
   return {
     ...project,
-    demoMode: "EXTERNAL_URL",
-    demoUrl: project.demoUrl?.startsWith("/d/") || project.demoUrl?.includes("/d/")
-      ? project.demoUrl
-      : liveDemo,
+    demoMode: project.demoMode || "EXTERNAL_URL",
+    demoUrl: project.demoUrl?.startsWith("/d/") ? project.demoUrl : liveDemo,
   };
 }
 
 export async function upsertProject(project: Project): Promise<Project> {
   const all = await loadProjects();
-  // Auto demo link
   const enriched = withDemoUrl({
     ...project,
     updatedAt: new Date().toISOString(),
