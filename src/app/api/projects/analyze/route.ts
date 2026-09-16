@@ -50,18 +50,35 @@ export async function POST(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
   try {
-    const form = await req.formData();
-    const file = form.get("file");
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ error: "ارفع ملف ZIP" }, { status: 400 });
+    const contentType = req.headers.get("content-type") || "";
+    let buf: Buffer;
+    let name = "project.zip";
+
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      const blobUrl = String(body.blobUrl || "");
+      name = String(body.fileName || "project.zip");
+      if (!blobUrl.startsWith("http")) {
+        return NextResponse.json({ error: "رابط الملف غير صالح" }, { status: 400 });
+      }
+      const r = await fetch(blobUrl, { cache: "no-store" });
+      if (!r.ok) {
+        return NextResponse.json({ error: "تعذر تنزيل الملف من التخزين" }, { status: 400 });
+      }
+      buf = Buffer.from(await r.arrayBuffer());
+    } else {
+      const form = await req.formData();
+      const file = form.get("file");
+      if (!file || !(file instanceof Blob)) {
+        return NextResponse.json({ error: "ارفع ملف ZIP" }, { status: 400 });
+      }
+      name = (file as File).name || "project.zip";
+      buf = Buffer.from(await file.arrayBuffer());
     }
 
-    const name = (file as File).name || "project.zip";
     if (!name.toLowerCase().endsWith(".zip")) {
       return NextResponse.json({ error: "الملف يجب أن يكون ZIP" }, { status: 400 });
     }
-
-    const buf = Buffer.from(await file.arrayBuffer());
     const validation = validateZipBuffer(buf);
     if (!validation.ok) {
       return NextResponse.json(

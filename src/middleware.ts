@@ -6,6 +6,7 @@ const ADMIN_COOKIE = "bm_admin_session";
 const PROTECTED_API_PREFIXES = [
   "/api/projects/analyze",
   "/api/upload",
+  "/api/zip-upload",
 ];
 
 export function middleware(req: NextRequest) {
@@ -52,5 +53,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/projects/:path*", "/api/upload/:path*"],
+  matcher: ["/admin/:path*", "/api/projects/:path*", "/api/upload/:path*", "/api/zip-upload"],
 };

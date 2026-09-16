@@ -1,4 +1,5 @@
 "use client";
+import { upload } from "@vercel/blob/client";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -62,15 +63,36 @@ export default function NewProjectPage() {
     setZipName(file.name);
     setAnalyzing(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/projects/analyze", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "فشل رفع/فحص الملف");
-        if (data.details) setError((data.error || "") + ": " + (data.details as string[]).join("، "));
-        setZipName("");
-        return;
+      const DIRECT_LIMIT = 4 * 1024 * 1024;
+      let data: any;
+      if (file.size > DIRECT_LIMIT) {
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/zip-upload",
+        });
+        const res = await fetch("/api/projects/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blobUrl: blob.url, fileName: file.name }),
+        });
+        data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "فشل تحليل الملف بعد الرفع");
+          if (data.details) setError((data.error || "") + ": " + (data.details as string[]).join("، "));
+          setZipName("");
+          return;
+        }
+      } else {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/projects/analyze", { method: "POST", body: fd });
+        data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "فشل رفع/فحص الملف");
+          if (data.details) setError((data.error || "") + ": " + (data.details as string[]).join("، "));
+          setZipName("");
+          return;
+        }
       }
       setScanOk(true);
       setLanguages(data.languages || []);

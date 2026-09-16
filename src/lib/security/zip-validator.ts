@@ -9,9 +9,9 @@ import path from "path";
 import { createHash } from "crypto";
 
 export const ZIP_LIMITS = {
-  maxFileSizeBytes: 50 * 1024 * 1024, // 50 MB
-  maxUncompressedBytes: 200 * 1024 * 1024, // 200 MB
-  maxFiles: 5000,
+  maxFileSizeBytes: 500 * 1024 * 1024, // 50 MB
+  maxUncompressedBytes: 1500 * 1024 * 1024, // 200 MB
+  maxFiles: 20000,
   maxDepth: 20,
   allowedExtensions: new Set([
     ".js", ".jsx", ".ts", ".tsx", ".json", ".md", ".txt", ".css", ".scss",
